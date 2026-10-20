@@ -16,7 +16,9 @@ Stdlib only. No dependencies.
 """
 
 import argparse
+import base64
 import html
+import io
 import os
 import re
 import shutil
@@ -263,20 +265,43 @@ def load_articles(articles_dir):
     return articles
 
 
-def copy_assets(articles, base_assets_dir, out_assets_dir):
-    os.makedirs(out_assets_dir, exist_ok=True)
+def copy_assets(articles, base_assets_dir, out_assets_dir, inline=False):
+    if not inline:
+        os.makedirs(out_assets_dir, exist_ok=True)
     for a in articles:
         img = a.get("image", "")
         if not img:
             continue
         src = os.path.join(base_assets_dir, os.path.basename(img))
-        dst = os.path.join(out_assets_dir, os.path.basename(img))
-        if os.path.exists(src):
-            shutil.copy2(src, dst)
-            a["_image_url"] = "assets/" + os.path.basename(img)
-        else:
+        if not os.path.exists(src):
             print("WARN: image not found: %s" % src, file=sys.stderr)
             a["_image_url"] = ""
+            continue
+        if inline:
+            a["_image_data"] = image_data_uri(src)
+            a["_image_url"] = ""
+        else:
+            dst = os.path.join(out_assets_dir, os.path.basename(img))
+            shutil.copy2(src, dst)
+            a["_image_url"] = "assets/" + os.path.basename(img)
+
+
+def image_data_uri(path):
+    """Embed an image as a base64 data URI, compressed for web display.
+    Used when WIRE_INLINE_IMAGES=1 (e.g. when the host cannot store binary
+    files via API). Falls back to raw bytes if PIL is unavailable."""
+    try:
+        from PIL import Image
+        im = Image.open(path).convert("RGB")
+        if im.width > 1000:
+            im = im.resize((1000, int(1000 * im.height / im.width)), Image.LANCZOS)
+        buf = io.BytesIO()
+        im.save(buf, "JPEG", quality=70, optimize=True)
+        raw = buf.getvalue()
+    except ImportError:
+        with open(path, "rb") as fh:
+            raw = fh.read()
+    return "data:image/jpeg;base64," + base64.b64encode(raw).decode("ascii")
 
 
 def render_index(articles):
@@ -284,7 +309,9 @@ def render_index(articles):
     for a in articles:
         url = "articles/%s/%s/" % (a["date"], a["slug"])
         img = ""
-        if a.get("_image_url"):
+        if a.get("_image_data"):
+            img = '<img src="%s" alt="%s">' % (a["_image_data"], html.escape(a["title"]))
+        elif a.get("_image_url"):
             img = '<img src="%s" alt="%s">' % (a["_image_url"], html.escape(a["title"]))
         cards.append(
             '<div class="card">%s<div class="pad">'
@@ -301,7 +328,9 @@ def render_index(articles):
 
 def render_article(a):
     img = ""
-    if a.get("_image_url"):
+    if a.get("_image_data"):
+        img = '<div class="hero"><img src="%s" alt="%s"></div>' % (a["_image_data"], html.escape(a["title"]))
+    elif a.get("_image_url"):
         img = '<div class="hero"><img src="../../%s" alt="%s"></div>' % (a["_image_url"], html.escape(a["title"]))
     fb = ""
     if a.get("facebook"):
@@ -376,14 +405,14 @@ def render_sitemap(articles):
             + "".join("<url><loc>%s</loc></url>" % u for u in urls) + "</urlset>")
 
 
-def build(articles_dir, out_dir, base_assets_dir):
+def build(articles_dir, out_dir, base_assets_dir, inline_images=False):
     articles = load_articles(articles_dir)
     print("Loaded %d articles" % len(articles))
 
     if os.path.exists(out_dir):
         shutil.rmtree(out_dir)
     os.makedirs(out_dir)
-    copy_assets(articles, base_assets_dir, os.path.join(out_dir, "assets"))
+    copy_assets(articles, base_assets_dir, os.path.join(out_dir, "assets"), inline=inline_images)
 
     with open(os.path.join(out_dir, "style.css"), "w", encoding="utf-8") as fh:
         fh.write(CSS)
@@ -432,7 +461,8 @@ def main():
     ap.add_argument("--out", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "docs"))
     ap.add_argument("--assets", default=os.path.join(os.path.expanduser("~"), "workspace", "hill-country-weird", "assets"))
     args = ap.parse_args()
-    build(args.articles, args.out, args.assets)
+    inline = os.environ.get("WIRE_INLINE_IMAGES", "") == "1"
+    build(args.articles, args.out, args.assets, inline_images=inline)
 
 
 if __name__ == "__main__":
