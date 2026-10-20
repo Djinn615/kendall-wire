@@ -184,6 +184,44 @@ article.full blockquote{border-left:3px solid var(--accent);margin:1.2em 0;paddi
 .about ul.desks{list-style:none;padding:0}
 .about ul.desks li{border-bottom:1px dotted var(--ink-soft);padding:8px 0}
 .about ul.desks strong{letter-spacing:1px}
+/* ---- front page: newspaper layout, mobile first ---- */
+.wrap.wide{max-width:1040px}
+.dateline-top{font-size:.8rem;color:var(--ink-soft);letter-spacing:1px;margin-top:8px}
+.fp-rule{border:0;border-top:3px double var(--rule);margin:0 0 4px}
+.lead{border:1px solid var(--rule);outline:3px double var(--rule);outline-offset:3px;
+  background:#FBF8F1;margin:22px 0;overflow:hidden}
+.lead img{width:100%;height:auto;display:block}
+.lead .pad{padding:18px 20px 22px}
+.lead h2.lead-head{font-size:1.8rem;line-height:1.25;margin:0 0 8px}
+.lead h2.lead-head a{color:var(--ink);text-decoration:none}
+.lead h2.lead-head a:hover{text-decoration:underline}
+.section-head{font-size:.9rem;letter-spacing:3px;text-transform:uppercase;
+  border-bottom:3px double var(--rule);padding-bottom:8px;margin:30px 0 4px}
+.sec-grid{display:grid;gap:0}
+.sec-story{border-bottom:1px dotted var(--ink-soft);padding:14px 0}
+.sec-story h3{font-size:1.15rem;margin:0 0 4px;line-height:1.35}
+.sec-story h3 a{color:var(--ink);text-decoration:none}
+.sec-story h3 a:hover{text-decoration:underline}
+.sec-story .dateline{font-size:.78rem;color:var(--ink-soft);font-style:italic;margin-bottom:6px}
+.sec-story p{font-size:.92rem;color:var(--ink-soft);margin:0}
+.rail-box{border:1px solid var(--rule);outline:3px double var(--rule);outline-offset:3px;
+  background:#FBF8F1;padding:16px 18px;margin:22px 0}
+.rail-box h3{margin:0 0 8px;font-size:.9rem;letter-spacing:2px;text-transform:uppercase}
+.rail-box p{font-size:.9rem;margin:0 0 .8em;color:var(--ink-soft)}
+.rail-box p:last-child{margin-bottom:0}
+.rail-box a{color:var(--ink)}
+ul.desk-list{list-style:none;padding:0;margin:0}
+ul.desk-list li{padding:7px 0;border-bottom:1px dotted var(--ink-soft);font-size:.88rem}
+ul.desk-list li:last-child{border-bottom:0}
+ul.desk-list a{color:var(--ink);text-decoration:none}
+ul.desk-list a:hover{text-decoration:underline}
+.rail-desk-label{font-size:.72rem;letter-spacing:2px;text-transform:uppercase;color:var(--accent);margin:14px 0 2px}
+@media(min-width:900px){
+  .fp{display:grid;grid-template-columns:1fr 300px;gap:34px;align-items:start}
+  .sec-grid{grid-template-columns:1fr 1fr;gap:0 26px}
+  .lead h2.lead-head{font-size:2.2rem}
+  .masthead h1{font-size:3.2rem}
+}
 footer{border-top:3px double var(--rule);margin-top:40px;padding:18px 0 34px;
   text-align:center;font-size:.8rem;color:var(--ink-soft)}
 footer a{color:var(--ink)}
@@ -204,16 +242,17 @@ BASE_HTML = """<!DOCTYPE html>
 <div class="kicker">Kendall County &bull; Local News</div>
 <h1><a href="{home}">The Kendall Wire</a></h1>
 <div class="tagline">{tagline}</div>
+<div class="dateline-top">Boerne, Texas &bull; {edition_date}</div>
 </div></header>
 <nav class="top"><div class="wrap">
 <a href="{home}">Latest</a><a href="{about}">About</a><a href="{feed}">RSS</a>
 </div></nav>
-<div class="wrap">
+<div class="{wrap_class}">
 {content}
 </div>
 <footer><div class="wrap">
 The Kendall Wire &bull; AI-assisted local reporting, reviewed by a human before publishing.<br>
-<a href="{about}">How this works</a>
+<a href="{about}">How this works</a> &bull; <a href="{feed}">RSS</a>
 </div></footer>
 </body>
 </html>
@@ -227,6 +266,12 @@ def fmt_date(datestr):
         return "%s %d, %s" % (calendar.month_name[int(m)], int(d), y)
     except Exception:
         return datestr
+
+
+def edition_date_str():
+    """Today's date line for the masthead, e.g. 'Monday, October 19, 2026'."""
+    import datetime
+    return datetime.date.today().strftime("%A, %B %d, %Y").replace(" 0", " ")
 
 
 # ---------------------------------------------------------------------------
@@ -304,26 +349,95 @@ def image_data_uri(path):
     return "data:image/jpeg;base64," + base64.b64encode(raw).decode("ascii")
 
 
-def render_index(articles):
-    cards = []
-    for a in articles:
-        url = "articles/%s/%s/" % (a["date"], a["slug"])
-        img = ""
-        if a.get("_image_data"):
-            img = '<img src="%s" alt="%s">' % (a["_image_data"], html.escape(a["title"]))
-        elif a.get("_image_url"):
-            img = '<img src="%s" alt="%s">' % (a["_image_url"], html.escape(a["title"]))
-        cards.append(
-            '<div class="card">%s<div class="pad">'
+ARTICLE_URL = "articles/%s/%s/"
+
+ELECTION_BOX = """<div class="rail-box">
+<h3>Election 2026</h3>
+<p>Early voting runs October 19 through October 30 at the Courthouse Annex,
+221 Fawn Valley Dr., Boerne. Election day is Tuesday, November 3.</p>
+<p>On the ballot: Justice of the Peace Precinct 1 (Van Stavern vs Wolfe),
+Comfort ISD Trustee District 2, Comal ISD bond measures, State Rep District 19,
+and US Rep District 21.</p>
+</div>"""
+
+ABOUT_BOX = """<div class="rail-box">
+<h3>About the Wire</h3>
+<p>The Kendall Wire is AI-assisted local reporting. Software drafts every story
+from the public record: court agendas, meeting videos, official posts, election
+filings, weather alerts. A local human reads every word and approves each story
+before it publishes. Nothing goes out on autopilot.</p>
+<p><a href="about.html">How this works</a></p>
+</div>"""
+
+
+def _img_tag(a):
+    if a.get("_image_data"):
+        return '<img src="%s" alt="%s">' % (a["_image_data"], html.escape(a["title"]))
+    if a.get("_image_url"):
+        return '<img src="%s" alt="%s">' % (a["_image_url"], html.escape(a["title"]))
+    return ""
+
+
+def render_frontpage(articles):
+    """Newspaper front page: lead story, secondary stories in a grid,
+    and a sidebar rail (election box, about blurb, archives by desk)."""
+    if not articles:
+        return "<p>No stories yet.</p>"
+    lead = articles[0]
+    rest = articles[1:]
+    lead_url = ARTICLE_URL % (lead["date"], lead["slug"])
+    lead_img = _img_tag(lead)
+    lead_html = (
+        '<section class="lead">%s<div class="pad">'
+        '<div class="desk">%s</div>'
+        '<h2 class="lead-head"><a href="%s">%s</a></h2>'
+        '<div class="dateline">%s</div>'
+        '<p class="summary">%s</p>'
+        '<a class="readmore" href="%s">Read the full story</a>'
+        "</div></section>"
+        % (lead_img, html.escape(lead["desk"]), lead_url,
+           html.escape(lead["title"]), html.escape(fmt_date(lead["date"])),
+           html.escape(lead["summary"]), lead_url))
+
+    sec_items = []
+    for a in rest:
+        url = ARTICLE_URL % (a["date"], a["slug"])
+        sec_items.append(
+            '<div class="sec-story">'
             '<div class="desk">%s</div>'
-            '<h2><a href="%s">%s</a></h2>'
+            '<h3><a href="%s">%s</a></h3>'
             '<div class="dateline">%s</div>'
-            '<p class="summary">%s</p>'
-            '<a class="readmore" href="%s">Read the full story</a>'
-            "</div></div>"
-            % (img, html.escape(a["desk"]), url, html.escape(a["title"]),
-               html.escape(fmt_date(a["date"])), html.escape(a["summary"]), url))
-    return "\n".join(cards) if cards else "<p>No stories yet.</p>"
+            '<p>%s</p>'
+            "</div>"
+            % (html.escape(a["desk"]), url, html.escape(a["title"]),
+               html.escape(fmt_date(a["date"])), html.escape(a["summary"])))
+    secondary = ""
+    if sec_items:
+        secondary = ('<section><h3 class="section-head">More from the Wire</h3>'
+                     '<div class="sec-grid">%s</div></section>' % "".join(sec_items))
+
+    # Archives: every published article grouped by desk (including the lead)
+    by_desk = {}
+    desk_order = []
+    for a in articles:
+        d = a["desk"]
+        if d not in by_desk:
+            by_desk[d] = []
+            desk_order.append(d)
+        by_desk[d].append(a)
+    arch_parts = []
+    for d in desk_order:
+        links = "".join(
+            '<li><a href="%s">%s</a></li>' % (ARTICLE_URL % (a["date"], a["slug"]), html.escape(a["title"]))
+            for a in by_desk[d])
+        arch_parts.append('<div class="rail-desk-label">%s</div><ul class="desk-list">%s</ul>'
+                          % (html.escape(d), links))
+    archives_box = ('<div class="rail-box"><h3>Archives by desk</h3>%s</div>'
+                    % "".join(arch_parts))
+
+    return ('<hr class="fp-rule"><div class="fp"><div class="fp-main">%s%s</div>'
+            '<aside>%s%s%s</aside></div>'
+            % (lead_html, secondary, ELECTION_BOX, ABOUT_BOX, archives_box))
 
 
 def render_article(a):
@@ -356,22 +470,50 @@ def render_article(a):
 
 
 ABOUT_HTML = """<div class="about">
-<h2>How The Kendall Wire works</h2>
+<h2>A note from the founder</h2>
+<p>I started The Kendall Wire because Kendall County runs on meetings nobody has
+time to attend.</p>
+<p>Every week, the commissioners court votes on your tax rate, your roads, and
+your water. The city council zones the land next to your neighborhood. The
+school board spends your bond money. All of it is public. Almost none of it
+gets read, because the agendas are long, the videos are longer, and the local
+paper cannot be everywhere.</p>
+<p>So I built a Wire that can.</p>
+<p>Here is how it works, in the open. Software reads the public record: court
+agendas, meeting videos, sheriff and fire marshal posts, election filings,
+weather alerts. It drafts the story from those sources. Then I read every word,
+check it against the source, and decide whether it meets the standard. Nothing
+publishes that I have not approved.</p>
+<p>The software is AI, and I do not hide that, because a news source that hides
+how it works has already failed its own test. What matters is who answers for
+the story. That is a person who lives in this county.</p>
+<p>What the Wire will do: cover the meetings, the elections, the water, the
+weather, and the Friday night scores. Straight news. Sources linked. No spin
+from either direction.</p>
+<p>What the Wire will not do: rumors, outrage bait, or naming private people
+caught up in an incident. If I get something wrong, I will correct it in the
+open.</p>
+<p>Kendall County deserves to know what its government is doing. Now it has a
+Wire.</p>
+<h2>How the stories are made</h2>
 <p>The Kendall Wire is an AI-assisted local news page for Kendall County, Texas.
-AI systems monitor public sources, court agendas and videos, official announcements,
-and local reporting, then draft each story. <strong>Every story is reviewed and
-approved by a local human before it is published.</strong> Nothing goes live on
-autopilot.</p>
+AI systems monitor public sources, court agendas and videos, official
+announcements, and local reporting, then draft each story. <strong>Every story
+is reviewed and approved by a local human before it is published.</strong>
+Nothing goes live on autopilot.</p>
 <p>We report the news straight: no spin, no rumors, no outrage bait. When we get
 something wrong, we correct it plainly.</p>
 <h2>The desks</h2>
 <ul class="desks">
-<li><strong>Courts Desk</strong> &mdash; Commissioners court, agendas, votes, county government.</li>
-<li><strong>Schools Desk</strong> &mdash; Boerne ISD board, bonds, closures, district news.</li>
-<li><strong>Weather Desk</strong> &mdash; Alerts, burn bans, flood and storm coverage.</li>
-<li><strong>Development Desk</strong> &mdash; Zoning, plats, subdivisions, road projects.</li>
-<li><strong>Elections Desk</strong> &mdash; Ballots, turnout, results. Runs on its own track during election season.</li>
-<li><strong>Community Desk</strong> &mdash; The life of the county: events, history, neighbors.</li>
+<li><strong>Courts Desk</strong>: commissioners court, agendas, votes, county government.</li>
+<li><strong>City Desk</strong>: Boerne city council, zoning, annexations, municipal news.</li>
+<li><strong>Schools Desk</strong>: Boerne ISD board, bonds, closures, district news.</li>
+<li><strong>Weather Desk</strong>: alerts, burn bans, flood and storm coverage.</li>
+<li><strong>Development Desk</strong>: plats, subdivisions, road projects, growth.</li>
+<li><strong>Elections Desk</strong>: ballots, turnout, results. Runs on its own track during election season.</li>
+<li><strong>Water Desk</strong>: groundwater districts, drought stages, lake levels, water policy.</li>
+<li><strong>Sports Desk</strong>: Friday night finals and local athletics.</li>
+<li><strong>Community Desk</strong>: the life of the county, events, history, neighbors.</li>
 </ul>
 <p>These are editorial sections, not people. No bylines are invented; every story
 carries the Wire's name and the responsibility that comes with it.</p>
@@ -417,15 +559,18 @@ def build(articles_dir, out_dir, base_assets_dir, inline_images=False):
     with open(os.path.join(out_dir, "style.css"), "w", encoding="utf-8") as fh:
         fh.write(CSS)
 
-    def page(title, description, content, css_path="style.css", home="index.html"):
+    def page(title, description, content, css_path="style.css", home="index.html",
+             wrap_class="wrap"):
         return BASE_HTML.format(
             title=html.escape(title), description=html.escape(description),
             css_path=css_path, home=home, about="about.html", feed="feed.xml",
-            tagline=SITE_TAGLINE, content=content)
+            tagline=SITE_TAGLINE, content=content,
+            edition_date=edition_date_str(), wrap_class=wrap_class)
 
-    # Index
+    # Index (newspaper front page)
     with open(os.path.join(out_dir, "index.html"), "w", encoding="utf-8") as fh:
-        fh.write(page(SITE_NAME, SITE_TAGLINE, render_index(articles)))
+        fh.write(page(SITE_NAME, SITE_TAGLINE, render_frontpage(articles),
+                      wrap_class="wrap wide"))
 
     # About
     with open(os.path.join(out_dir, "about.html"), "w", encoding="utf-8") as fh:
@@ -441,7 +586,8 @@ def build(articles_dir, out_dir, base_assets_dir, inline_images=False):
                 description=html.escape(a["summary"]),
                 css_path="../../../style.css", home="../../../index.html",
                 about="../../../about.html", feed="../../../feed.xml",
-                tagline=SITE_TAGLINE, content=render_article(a))
+                tagline=SITE_TAGLINE, content=render_article(a),
+                edition_date=edition_date_str(), wrap_class="wrap")
             fh.write(art)
 
     # Feed, sitemap, nojekyll
