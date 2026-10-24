@@ -26,7 +26,17 @@ import sys
 
 SITE_NAME = "The Kendall Wire"
 SITE_TAGLINE = "Kendall County, reported straight."
-SITE_URL = "https://djinn615.github.io/kendall-wire"
+SITE_URL = "https://kendallwire.com"
+
+# Cloudflare Web Analytics beacon token for kendallwire.com. This is a
+# public token (it ships in every page's HTML); empty string = no beacon.
+CF_BEACON_TOKEN = "73d6c586f51749e79f281697aa8763e4"
+
+def analytics_snippet():
+    if not CF_BEACON_TOKEN:
+        return ""
+    return ("<script type='module' src=\"https://static.cloudflareinsights.com/beacon.min.js\" "
+            "data-cf-beacon='{\"token\": \"" + CF_BEACON_TOKEN + "\"}'></script>")
 
 # ---------------------------------------------------------------------------
 # Minimal frontmatter parser (subset of YAML: scalars and lists of mappings)
@@ -188,28 +198,40 @@ article.full blockquote{border-left:3px solid var(--accent);margin:1.2em 0;paddi
 .wrap.wide{max-width:1040px}
 .dateline-top{font-size:.8rem;color:var(--ink-soft);letter-spacing:1px;margin-top:8px}
 .fp-rule{border:0;border-top:3px double var(--rule);margin:0 0 4px}
+.fp{display:flex;flex-direction:column}
+.main-col{order:2}
+.rail{display:contents}
+.rail-box.election-box{order:1}
+.rail-box.about-box{order:3}
+.rail-box.more-box{order:4}
+.meta{font-size:.75rem;letter-spacing:1px;text-transform:uppercase;margin:0 0 4px}
+.meta-desk{color:var(--ink);font-weight:bold}
+.meta-date{color:var(--ink-soft)}
 .lead{border:1px solid var(--rule);outline:3px double var(--rule);outline-offset:3px;
-  background:#FBF8F1;margin:22px 0;overflow:hidden}
-.lead img{width:100%;height:auto;display:block}
+  background:#FBF8F1;margin:4px 0 24px;overflow:hidden}
+.lead img{width:100%;aspect-ratio:16/9;object-fit:cover;display:block;border-bottom:1px solid var(--rule)}
 .lead .pad{padding:18px 20px 22px}
-.lead h2.lead-head{font-size:1.8rem;line-height:1.25;margin:0 0 8px}
+.lead h2.lead-head{font-size:2rem;line-height:1.15;margin:6px 0 10px}
 .lead h2.lead-head a{color:var(--ink);text-decoration:none}
 .lead h2.lead-head a:hover{text-decoration:underline}
-.section-head{font-size:.9rem;letter-spacing:3px;text-transform:uppercase;
-  border-bottom:3px double var(--rule);padding-bottom:8px;margin:30px 0 4px}
-.sec-grid{display:grid;gap:0}
-.sec-story{border-bottom:1px dotted var(--ink-soft);padding:14px 0}
-.sec-story h3{font-size:1.15rem;margin:0 0 4px;line-height:1.35}
+.lead p.summary{font-size:1rem;line-height:1.5;color:var(--ink-soft);margin:0}
+.sec-story{border-bottom:1px solid var(--rule);padding:18px 0}
+.sec-story:last-child{border-bottom:0}
+.sec-story h3{font-size:1.5rem;margin:6px 0 8px;line-height:1.25}
 .sec-story h3 a{color:var(--ink);text-decoration:none}
 .sec-story h3 a:hover{text-decoration:underline}
-.sec-story .dateline{font-size:.78rem;color:var(--ink-soft);font-style:italic;margin-bottom:6px}
-.sec-story p{font-size:.92rem;color:var(--ink-soft);margin:0}
-.rail-box{border:1px solid var(--rule);outline:3px double var(--rule);outline-offset:3px;
-  background:#FBF8F1;padding:16px 18px;margin:22px 0}
-.rail-box h3{margin:0 0 8px;font-size:.9rem;letter-spacing:2px;text-transform:uppercase}
-.rail-box p{font-size:.9rem;margin:0 0 .8em;color:var(--ink-soft)}
+.sec-story p{font-size:1rem;line-height:1.5;color:var(--ink-soft);margin:0}
+.rail-box{border:1px solid var(--rule);background:#FBF8F1;padding:16px 18px;margin:0 0 22px}
+.rail-box.election-box{outline:3px double var(--rule);outline-offset:3px}
+.rail-box h3{margin:0 0 8px;font-size:.9rem;letter-spacing:2px;text-transform:uppercase;color:var(--ink)}
+.rail-box p{font-size:.95rem;line-height:1.5;margin:0 0 .8em;color:var(--ink-soft)}
 .rail-box p:last-child{margin-bottom:0}
 .rail-box a{color:var(--ink)}
+ul.more-list{list-style:none;padding:0;margin:0}
+ul.more-list li{padding:10px 0;border-bottom:1px dotted var(--ink-soft);font-size:1rem;font-weight:bold;line-height:1.35}
+ul.more-list li:last-child{border-bottom:0;padding-bottom:0}
+ul.more-list a{color:var(--ink);text-decoration:none}
+ul.more-list a:hover{text-decoration:underline}
 ul.desk-list{list-style:none;padding:0;margin:0}
 ul.desk-list li{padding:7px 0;border-bottom:1px dotted var(--ink-soft);font-size:.88rem}
 ul.desk-list li:last-child{border-bottom:0}
@@ -218,8 +240,11 @@ ul.desk-list a:hover{text-decoration:underline}
 .rail-desk-label{font-size:.72rem;letter-spacing:2px;text-transform:uppercase;color:var(--accent);margin:14px 0 2px}
 @media(min-width:900px){
   .fp{display:grid;grid-template-columns:1fr 300px;gap:34px;align-items:start}
-  .sec-grid{grid-template-columns:1fr 1fr;gap:0 26px}
-  .lead h2.lead-head{font-size:2.2rem}
+  .rail{display:block}
+  .main-col{grid-column:1;grid-row:1;order:0}
+  .rail{grid-column:2;grid-row:1;order:0}
+  .rail-box.election-box,.rail-box.about-box,.rail-box.more-box{order:0}
+  .lead h2.lead-head{font-size:2.5rem}
   .masthead h1{font-size:3.2rem}
 }
 footer{border-top:3px double var(--rule);margin-top:40px;padding:18px 0 34px;
@@ -236,7 +261,7 @@ BASE_HTML = """<!DOCTYPE html>
 <title>{title}</title>
 <meta name="description" content="{description}">
 <link rel="stylesheet" href="{css_path}">
-</head>
+{analytics}</head>
 <body>
 <header class="masthead"><div class="wrap">
 <div class="kicker">Kendall County &bull; Local News</div>
@@ -245,7 +270,7 @@ BASE_HTML = """<!DOCTYPE html>
 <div class="dateline-top">Boerne, Texas &bull; {edition_date}</div>
 </div></header>
 <nav class="top"><div class="wrap">
-<a href="{home}">Latest</a><a href="{about}">About</a><a href="{feed}">RSS</a>
+<a href="{home}">Latest</a><a href="{about}">About</a>
 </div></nav>
 <div class="{wrap_class}">
 {content}
@@ -351,7 +376,7 @@ def image_data_uri(path):
 
 ARTICLE_URL = "articles/%s/%s/"
 
-ELECTION_BOX = """<div class="rail-box">
+ELECTION_BOX = """<div class="rail-box election-box">
 <h3>Election 2026</h3>
 <p>Early voting runs October 19 through October 30 at the Courthouse Annex,
 221 Fawn Valley Dr., Boerne. Election day is Tuesday, November 3.</p>
@@ -360,7 +385,7 @@ Comfort ISD Trustee District 2, Comal ISD bond measures, State Rep District 19,
 and US Rep District 21.</p>
 </div>"""
 
-ABOUT_BOX = """<div class="rail-box">
+ABOUT_BOX = """<div class="rail-box about-box">
 <h3>About the Wire</h3>
 <p>The Kendall Wire is AI-assisted local reporting. Software drafts every story
 from the public record: court agendas, meeting videos, official posts, election
@@ -378,66 +403,88 @@ def _img_tag(a):
     return ""
 
 
+def _first_sentence(text):
+    text = " ".join(str(text).split())
+    idx = text.find(". ")
+    if idx != -1:
+        return text[:idx + 1]
+    return text
+
+
+def _lead_img_tag(a):
+    """Front page lead image: like _img_tag, but recompressed toward the
+    redesign's page-weight budget (about 60 KB before base64)."""
+    data = a.get("_image_data")
+    if data and data.startswith("data:image/jpeg;base64,"):
+        try:
+            from PIL import Image
+            raw = base64.b64decode(data.split(",", 1)[1])
+            im = Image.open(io.BytesIO(raw)).convert("RGB")
+            out = None
+            for width, q in ((880, 64), (880, 54), (820, 46), (760, 40), (700, 34)):
+                cur = im
+                if cur.width != width:
+                    cur = im.resize((width, int(width * im.height / im.width)), Image.LANCZOS)
+                buf = io.BytesIO()
+                cur.save(buf, "JPEG", quality=q, optimize=True)
+                out = buf.getvalue()
+                if len(out) <= 62000:
+                    break
+            if out is not None:
+                return '<img src="data:image/jpeg;base64,%s" alt="%s">' % (
+                    base64.b64encode(out).decode("ascii"), html.escape(a["title"]))
+        except Exception:
+            pass
+    return _img_tag(a)
+
+
+def _meta_line(a):
+    return ('<div class="meta"><span class="meta-desk">%s</span> &nbsp;|&nbsp; '
+            '<span class="meta-date">%s</span></div>'
+            % (html.escape(a["desk"]), html.escape(fmt_date(a["date"]))))
+
+
 def render_frontpage(articles):
-    """Newspaper front page: lead story, secondary stories in a grid,
-    and a sidebar rail (election box, about blurb, archives by desk)."""
+    """Newspaper front page, 2026-10-20 redesign from the Gemini audit:
+    one lead story with image, secondary stories in a single chronological
+    column with one-sentence summaries, and a rail with the election box,
+    the about box, and a More Headlines list of older stories that are not
+    in the main column. On mobile the rail boxes reorder around the main
+    column via flex order (election first, then stories, then about, then
+    more headlines)."""
     if not articles:
         return "<p>No stories yet.</p>"
     lead = articles[0]
-    rest = articles[1:]
+    secondary = articles[1:6]
+    more = articles[6:13]
     lead_url = ARTICLE_URL % (lead["date"], lead["slug"])
-    lead_img = _img_tag(lead)
     lead_html = (
-        '<section class="lead">%s<div class="pad">'
-        '<div class="desk">%s</div>'
+        '<article class="lead">%s<div class="pad">%s'
         '<h2 class="lead-head"><a href="%s">%s</a></h2>'
-        '<div class="dateline">%s</div>'
         '<p class="summary">%s</p>'
-        '<a class="readmore" href="%s">Read the full story</a>'
-        "</div></section>"
-        % (lead_img, html.escape(lead["desk"]), lead_url,
-           html.escape(lead["title"]), html.escape(fmt_date(lead["date"])),
-           html.escape(lead["summary"]), lead_url))
-
+        "</div></article>"
+        % (_lead_img_tag(lead), _meta_line(lead), lead_url,
+           html.escape(lead["title"]), html.escape(lead["summary"])))
     sec_items = []
-    for a in rest:
+    for a in secondary:
         url = ARTICLE_URL % (a["date"], a["slug"])
         sec_items.append(
-            '<div class="sec-story">'
-            '<div class="desk">%s</div>'
+            '<article class="sec-story">%s'
             '<h3><a href="%s">%s</a></h3>'
-            '<div class="dateline">%s</div>'
-            '<p>%s</p>'
-            "</div>"
-            % (html.escape(a["desk"]), url, html.escape(a["title"]),
-               html.escape(fmt_date(a["date"])), html.escape(a["summary"])))
-    secondary = ""
-    if sec_items:
-        secondary = ('<section><h3 class="section-head">More from the Wire</h3>'
-                     '<div class="sec-grid">%s</div></section>' % "".join(sec_items))
-
-    # Archives: every published article grouped by desk (including the lead)
-    by_desk = {}
-    desk_order = []
-    for a in articles:
-        d = a["desk"]
-        if d not in by_desk:
-            by_desk[d] = []
-            desk_order.append(d)
-        by_desk[d].append(a)
-    arch_parts = []
-    for d in desk_order:
-        links = "".join(
-            '<li><a href="%s">%s</a></li>' % (ARTICLE_URL % (a["date"], a["slug"]), html.escape(a["title"]))
-            for a in by_desk[d])
-        arch_parts.append('<div class="rail-desk-label">%s</div><ul class="desk-list">%s</ul>'
-                          % (html.escape(d), links))
-    archives_box = ('<div class="rail-box"><h3>Archives by desk</h3>%s</div>'
-                    % "".join(arch_parts))
-
-    return ('<hr class="fp-rule"><div class="fp"><div class="fp-main">%s%s</div>'
-            '<aside>%s%s%s</aside></div>'
-            % (lead_html, secondary, ELECTION_BOX, ABOUT_BOX, archives_box))
+            "<p>%s</p></article>"
+            % (_meta_line(a), url, html.escape(a["title"]),
+               html.escape(_first_sentence(a["summary"]))))
+    more_box = ""
+    if more:
+        lis = "".join(
+            '<li><a href="%s">%s</a></li>'
+            % (ARTICLE_URL % (a["date"], a["slug"]), html.escape(a["title"]))
+            for a in more)
+        more_box = ('<div class="rail-box more-box"><h3>More Headlines</h3>'
+                    '<ul class="more-list">%s</ul></div>' % lis)
+    return ('<hr class="fp-rule"><div class="fp"><main class="main-col">%s%s</main>'
+            '<aside class="rail">%s%s%s</aside></div>'
+            % (lead_html, "".join(sec_items), ELECTION_BOX, ABOUT_BOX, more_box))
 
 
 def render_article(a):
@@ -564,7 +611,7 @@ def build(articles_dir, out_dir, base_assets_dir, inline_images=False):
         return BASE_HTML.format(
             title=html.escape(title), description=html.escape(description),
             css_path=css_path, home=home, about="about.html", feed="feed.xml",
-            tagline=SITE_TAGLINE, content=content,
+            tagline=SITE_TAGLINE, content=content, analytics=analytics_snippet(),
             edition_date=edition_date_str(), wrap_class=wrap_class)
 
     # Index (newspaper front page)
@@ -587,6 +634,7 @@ def build(articles_dir, out_dir, base_assets_dir, inline_images=False):
                 css_path="../../../style.css", home="../../../index.html",
                 about="../../../about.html", feed="../../../feed.xml",
                 tagline=SITE_TAGLINE, content=render_article(a),
+                analytics=analytics_snippet(),
                 edition_date=edition_date_str(), wrap_class="wrap")
             fh.write(art)
 
@@ -596,6 +644,8 @@ def build(articles_dir, out_dir, base_assets_dir, inline_images=False):
     with open(os.path.join(out_dir, "sitemap.xml"), "w", encoding="utf-8") as fh:
         fh.write(render_sitemap(articles))
     open(os.path.join(out_dir, ".nojekyll"), "w").close()
+    with open(os.path.join(out_dir, "CNAME"), "w", encoding="utf-8") as fh:
+        fh.write("kendallwire.com")
 
     print("Wrote site to %s" % out_dir)
     return articles
