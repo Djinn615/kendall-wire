@@ -100,4 +100,8 @@ ul.desk-list a:hover{text-decoration:underline}
 footer{border-top:3px double var(--rule);margin-top:40px;padding:18px 0 34px;
   text-align:center;font-size:.8rem;color:var(--ink-soft)}
 footer a{color:var(--ink)}
+.newsletter-box{border-top:1px dotted var(--rule);margin-top:16px;padding-top:14px}
+.newsletter-box p{margin:6px 0}
+.newsletter-box input[type=email]{font-size:.9rem;padding:6px 8px;border:1px solid var(--rule);width:230px;max-width:70%}
+.newsletter-box input[type=submit]{font-size:.9rem;padding:6px 12px;border:1px solid var(--ink);background:var(--ink);color:#fff;cursor:pointer}
 @media(min-width:640px){.masthead h1{font-size:2.8rem}.card h2{font-size:1.6rem}}
