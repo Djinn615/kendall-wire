@@ -51,7 +51,6 @@ article.full blockquote{border-left:3px solid var(--accent);margin:1.2em 0;paddi
 .fp{display:flex;flex-direction:column}
 .main-col{order:2}
 .rail{display:contents}
-.rail-box.election-box{order:1}
 .rail-box.about-box{order:3}
 .rail-box.more-box{order:4}
 .meta{font-size:.75rem;letter-spacing:1px;text-transform:uppercase;margin:0 0 4px}
@@ -72,7 +71,6 @@ article.full blockquote{border-left:3px solid var(--accent);margin:1.2em 0;paddi
 .sec-story h3 a:hover{text-decoration:underline}
 .sec-story p{font-size:1rem;line-height:1.5;color:var(--ink-soft);margin:0}
 .rail-box{border:1px solid var(--rule);background:#FBF8F1;padding:16px 18px;margin:0 0 22px}
-.rail-box.election-box{outline:3px double var(--rule);outline-offset:3px}
 .rail-box h3{margin:0 0 8px;font-size:.9rem;letter-spacing:2px;text-transform:uppercase;color:var(--ink)}
 .rail-box p{font-size:.95rem;line-height:1.5;margin:0 0 .8em;color:var(--ink-soft)}
 .rail-box p:last-child{margin-bottom:0}
@@ -93,7 +91,7 @@ ul.desk-list a:hover{text-decoration:underline}
   .rail{display:block}
   .main-col{grid-column:1;grid-row:1;order:0}
   .rail{grid-column:2;grid-row:1;order:0}
-  .rail-box.election-box,.rail-box.about-box,.rail-box.more-box{order:0}
+  .rail-box.about-box,.rail-box.more-box{order:0}
   .lead h2.lead-head{font-size:2.5rem}
   .masthead h1{font-size:3.2rem}
 }
