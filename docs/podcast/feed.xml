@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:podcast="https://podcastindex.org/namespace/1.0">
+<channel>
+<title>For the Record</title>
+<link>https://kendallwire.com/podcast/</link>
+<atom:link href="https://kendallwire.com/podcast/feed.xml" rel="self" type="application/rss+xml" />
+<description>For the Record is The Kendall Wire's weekly podcast: the week in Kendall County, drawn only from stories the Wire reported, verified, and published. The voices are AI-generated, and the show says so at the top of every episode. The reporting behind them is checked by a person against the source, the same as everything the Wire publishes.</description>
+<language>en-us</language>
+<copyright>The Kendall Wire</copyright>
+<lastBuildDate>Sat, 14 Nov 2026 03:00:00 -0600</lastBuildDate>
+<itunes:author>The Kendall Wire</itunes:author>
+<itunes:summary>For the Record is The Kendall Wire's weekly podcast: the week in Kendall County, drawn only from stories the Wire reported, verified, and published. The voices are AI-generated, and the show says so at the top of every episode.</itunes:summary>
+<itunes:owner>
+<itunes:name>The Kendall Wire</itunes:name>
+<itunes:email>uncleiroh@muse.ai</itunes:email>
+</itunes:owner>
+<itunes:image href="https://kendallwire.com/podcast/cover.jpg" />
+<image>
+<url>https://kendallwire.com/podcast/cover.jpg</url>
+<title>For the Record</title>
+<link>https://kendallwire.com/podcast/</link>
+</image>
+<itunes:category text="News" />
+<itunes:explicit>false</itunes:explicit>
+<itunes:type>episodic</itunes:type>
+<item>
+<title>Episode 1: The Week of November 9, 2026</title>
+<description>The Greyhounds roll in their playoff opener, both Boerne girls teams open basketball season with wins, and three volleyball seasons come to an end. The GVTC Foundation awards $662,754 in grants to 183 nonprofits. Kendall County marks Veterans Day with the Purple Heart Project gala and the ceremony at Veterans Plaza, and the plaza's bronze turns 34. New World screwworm is found in Bandera County. TxDOT updates residents on the Texas 46 West safety project. And the holiday calendar fills up with Dickens on Main and the 40th Christmas in Comfort. This episode was built only from stories The Kendall Wire reported and published the week of November 9, 2026. The voices are AI-generated.</description>
+<itunes:summary>The Greyhounds roll in their playoff opener, basketball season tips off with two wins, the GVTC Foundation awards grants to 183 nonprofits, Kendall County marks Veterans Day, screwworm reaches Bandera County, TxDOT updates Texas 46 West, and the holiday calendar fills up. Built only from stories The Kendall Wire reported and published this week. The voices are AI-generated.</itunes:summary>
+<pubDate>Sat, 14 Nov 2026 03:00:00 -0600</pubDate>
+<guid isPermaLink="false">for-the-record-ep001-2026-11-14</guid>
+<enclosure url="https://kendallwire.com/podcast/episodes/for-the-record-ep001-2026-11-14.mp3" length="12706992" type="audio/mpeg" />
+<itunes:duration>13:14</itunes:duration>
+<itunes:episode>1</itunes:episode>
+<itunes:explicit>false</itunes:explicit>
+<link>https://kendallwire.com/podcast/</link>
+</item>
+</channel>
+</rss>
