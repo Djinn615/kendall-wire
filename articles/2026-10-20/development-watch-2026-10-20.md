@@ -80,6 +80,3 @@ Project page: http://www.txdot.gov/projects/projects-studies/san-antonio/fm3351-
 Project page: http://www.txdot.gov/projects/projects-studies/san-antonio/us281-sh46.html
 
 SH 46 West (Boerne to Bandera) safety work is tracked through the county-posted TxDOT planning presentation and local reporting; TxDOT does not maintain a dedicated project page for that segment.
-
----
-*Development Watch is a weekly digest. Nothing here is approved for publication until Josh reviews it.*

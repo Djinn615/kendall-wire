@@ -7,30 +7,167 @@ a complete static site into docs/ (GitHub Pages serves docs/ on the main
 branch).
 
 Usage:
-    python3 build_site.py [--articles DIR] [--out DIR]
+    python3 build_site.py [--articles DIR] [--out DIR] [--assets DIR]
 
 Frontmatter fields: title, date, slug, desk, summary, image, sources (list
-of {name, url}), optional facebook (post URL).
+of {name, url} or bare URLs), optional facebook (post URL).
+
+The build writes in place. It does not delete docs/podcast, the subscription
+pages, article HTML that has no markdown source, or images already in the
+output. Pass --prune only when every published story has markdown and you
+intend to drop the rest.
 
 Stdlib only. No dependencies.
 """
 
 import argparse
 import base64
+import calendar
+import datetime
 import html
 import io
 import os
 import re
 import shutil
 import sys
+from email.utils import formatdate
 
 SITE_NAME = "The Kendall Wire"
 SITE_TAGLINE = "Kendall County, reported straight."
 SITE_URL = "https://kendallwire.com"
 
 # Cloudflare Web Analytics beacon token for kendallwire.com. This is a
-# public token (it ships in every page's HTML); empty string = no beacon.
+# public site token (Cloudflare expects it in every page); it is not an
+# API secret. Empty string disables the beacon.
 CF_BEACON_TOKEN = "73d6c586f51749e79f281697aa8763e4"
+
+_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+_KEY_RE = re.compile(r"^([A-Za-z0-9_-]+):\s*(.*)$")
+_IMAGE_NAME_RE = re.compile(
+    r"^[A-Za-z0-9][A-Za-z0-9._-]*\.(?:jpg|jpeg|png|gif|webp)$", re.I)
+_HERO_DATA_RE = re.compile(
+    r"^data:image/(?:jpeg|png|gif|webp);base64,[A-Za-z0-9+/=\s]+$")
+
+
+class BuildError(Exception):
+    """The build cannot continue safely."""
+
+
+def _is_within(parent, path):
+    parent = os.path.realpath(parent)
+    path = os.path.realpath(path)
+    if path == parent:
+        return True
+    try:
+        return os.path.commonpath([parent, path]) == parent
+    except ValueError:
+        return False
+
+
+def assert_safe_out(out_dir, articles_dir):
+    """Refuse output paths that would wipe the machine or the source tree."""
+    out_real = os.path.realpath(out_dir)
+    home = os.path.realpath(os.path.expanduser("~"))
+    if out_real in ("/", home):
+        raise BuildError("refusing to build into %s" % out_dir)
+    articles_real = os.path.realpath(articles_dir)
+    if _is_within(articles_real, out_real) or _is_within(out_real, articles_real):
+        raise BuildError(
+            "refusing to build into %s: output and articles directories overlap" % out_dir)
+
+
+def valid_date(date):
+    if not date or not _DATE_RE.match(date):
+        return False
+    try:
+        year, month, day = (int(part) for part in date.split("-"))
+        datetime.date(year, month, day)
+    except ValueError:
+        return False
+    return True
+
+
+def valid_article_id(date, slug):
+    return bool(valid_date(date) and slug and _SLUG_RE.match(slug))
+
+
+def article_output_dir(out_dir, date, slug):
+    if not valid_article_id(date, slug):
+        raise BuildError("unsafe article date or slug: %s / %s" % (date, slug))
+    dest = os.path.join(out_dir, "articles", date, slug)
+    if not _is_within(out_dir, dest):
+        raise BuildError("article path escapes the output directory: %s" % dest)
+    return dest
+
+
+def _unquote(val):
+    val = val.strip()
+    if len(val) >= 2 and val[0] == val[-1] and val[0] in ("'", '"'):
+        inner = val[1:-1]
+        if val[0] == '"':
+            inner = inner.replace('\\"', '"').replace("\\\\", "\\")
+        else:
+            inner = inner.replace("\\'", "'")
+        return inner
+    return val
+
+
+def safe_url(url):
+    """Allow http(s), mailto, and same-site relative links. Drop every other scheme."""
+    if url is None:
+        return ""
+    url = str(url).strip()
+    if not url or re.search(r"[\x00-\x1f\s]", url):
+        return ""
+    if url.startswith(("//", "\\\\")):
+        return ""
+    lowered = url.lower()
+    if lowered.startswith(("javascript:", "data:", "vbscript:", "file:")):
+        return ""
+    if lowered.startswith(("http://", "https://", "mailto:")):
+        return url
+    # Relative link. A colon in the first path segment is a scheme we do not allow.
+    if ":" in url.split("/", 1)[0]:
+        return ""
+    if "\\" in url:
+        return ""
+    return url
+
+
+def image_basename(img):
+    """Reduce an image field to a filename inside the assets directory.
+
+    Absolute paths are not opened. Only the basename is used, and only when
+    it looks like an image file. That keeps frontmatter from reading or
+    copying arbitrary local files.
+    """
+    if not img:
+        return ""
+    name = os.path.basename(str(img).strip().replace("\\", "/"))
+    if not _IMAGE_NAME_RE.match(name):
+        return ""
+    return name
+
+
+def rfc822_date(datestr):
+    year, month, day = (int(part) for part in datestr.split("-"))
+    stamp = calendar.timegm((year, month, day, 12, 0, 0, 0, 0, 0))
+    return formatdate(stamp, usegmt=True)
+
+
+def default_assets_dir(repo_dir):
+    """Prefer an in-repo assets directory, then the legacy external one, then docs/assets."""
+    legacy = os.path.join(os.path.expanduser("~"), "workspace", "hill-country-weird", "assets")
+    candidates = [
+        os.path.join(repo_dir, "assets"),
+        legacy,
+        os.path.join(repo_dir, "docs", "assets"),
+    ]
+    for candidate in candidates:
+        if os.path.isdir(candidate):
+            return candidate
+    return os.path.join(repo_dir, "assets")
 
 def analytics_snippet():
     if not CF_BEACON_TOKEN:
@@ -43,7 +180,11 @@ def analytics_snippet():
 # ---------------------------------------------------------------------------
 
 def parse_frontmatter(text):
-    """Split '---' frontmatter from body. Returns (dict, body)."""
+    """Split '---' frontmatter from body. Returns (dict, body).
+
+    Supports scalars (quoted or not), literal and folded block scalars,
+    and lists of strings or single-level mappings. Keys may contain hyphens.
+    """
     if not text.startswith("---\n"):
         return {}, text
     end = text.find("\n---", 4)
@@ -52,35 +193,64 @@ def parse_frontmatter(text):
     raw = text[4:end]
     body = text[end + 4:].lstrip("\n")
     meta = {}
-    current_list = None
-    for line in raw.splitlines():
-        if not line.strip():
+    lines = raw.splitlines()
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if not line.strip() or line[0] in " \t":
+            i += 1
             continue
-        stripped = line.strip()
-        if stripped.startswith("- ") or stripped == "-":
-            item = stripped[2:].strip()
-            if current_list is None:
-                continue
-            dm = re.match(r"^([A-Za-z0-9_]+):\s*(.*)$", item)
-            if dm and item:
-                current_list.append({dm.group(1): dm.group(2).strip().strip('"').strip("'")})
-            else:
-                current_list.append(item)
+        matched = _KEY_RE.match(line)
+        if not matched:
+            i += 1
             continue
-        if line[0] in " \t":
-            m2 = re.match(r"^\s+([A-Za-z0-9_]+):\s*(.*)$", line)
-            if m2 and current_list and isinstance(current_list[-1], dict):
-                current_list[-1][m2.group(1)] = m2.group(2).strip().strip('"').strip("'")
+        key, val = matched.group(1), matched.group(2).strip()
+        if val in ("|", ">"):
+            folded = val == ">"
+            block = []
+            i += 1
+            while i < len(lines) and (not lines[i].strip() or lines[i][0] in " \t"):
+                if lines[i].strip():
+                    block.append(lines[i].strip())
+                elif block:
+                    block.append("")
+                i += 1
+            text_block = " ".join(part for part in block if part != "") if folded else "\n".join(block)
+            meta[key] = text_block.strip()
             continue
-        m = re.match(r"^([A-Za-z0-9_]+):\s*(.*)$", line)
-        if m:
-            key, val = m.group(1), m.group(2).strip()
-            if val == "":
-                meta[key] = []
-                current_list = meta[key]
-            else:
-                meta[key] = val.strip('"').strip("'")
-                current_list = None
+        if val == "":
+            items = []
+            i += 1
+            while i < len(lines):
+                if not lines[i].strip():
+                    i += 1
+                    continue
+                if lines[i][0] not in " \t" and not lines[i].lstrip().startswith("-"):
+                    break
+                stripped = lines[i].strip()
+                if stripped.startswith("- ") or stripped == "-":
+                    item = stripped[2:].strip()
+                    # A bare URL contains a colon, but it is not a "key: value" mapping.
+                    if re.match(r"^https?://", item, re.I) or re.match(r"^mailto:", item, re.I):
+                        items.append(_unquote(item))
+                    else:
+                        item_key = _KEY_RE.match(item) if item else None
+                        if item_key:
+                            items.append({item_key.group(1): _unquote(item_key.group(2))})
+                        elif item:
+                            items.append(_unquote(item))
+                        else:
+                            items.append({})
+                    i += 1
+                    continue
+                nested = _KEY_RE.match(stripped)
+                if nested and items and isinstance(items[-1], dict):
+                    items[-1][nested.group(1)] = _unquote(nested.group(2))
+                i += 1
+            meta[key] = items
+            continue
+        meta[key] = _unquote(val)
+        i += 1
     return meta, body
 
 
@@ -89,11 +259,19 @@ def parse_frontmatter(text):
 # blockquotes). Articles use simple markdown only.
 # ---------------------------------------------------------------------------
 
+def _link_repl(match):
+    label = match.group(1)
+    href = safe_url(html.unescape(match.group(2).strip()))
+    if not href:
+        return label
+    return '<a href="%s">%s</a>' % (html.escape(href, quote=True), label)
+
+
 def inline_md(text):
     t = html.escape(text)
     t = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", t)
     t = re.sub(r"\*(.+?)\*", r"<em>\1</em>", t)
-    t = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r'<a href="\2">\1</a>', t)
+    t = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", _link_repl, t)
     return t
 
 
@@ -201,7 +379,6 @@ article.full blockquote{border-left:3px solid var(--accent);margin:1.2em 0;paddi
 .fp{display:flex;flex-direction:column}
 .main-col{order:2}
 .rail{display:contents}
-.rail-box.election-box{order:1}
 .rail-box.about-box{order:3}
 .rail-box.more-box{order:4}
 .meta{font-size:.75rem;letter-spacing:1px;text-transform:uppercase;margin:0 0 4px}
@@ -222,7 +399,6 @@ article.full blockquote{border-left:3px solid var(--accent);margin:1.2em 0;paddi
 .sec-story h3 a:hover{text-decoration:underline}
 .sec-story p{font-size:1rem;line-height:1.5;color:var(--ink-soft);margin:0}
 .rail-box{border:1px solid var(--rule);background:#FBF8F1;padding:16px 18px;margin:0 0 22px}
-.rail-box.election-box{outline:3px double var(--rule);outline-offset:3px}
 .rail-box h3{margin:0 0 8px;font-size:.9rem;letter-spacing:2px;text-transform:uppercase;color:var(--ink)}
 .rail-box p{font-size:.95rem;line-height:1.5;margin:0 0 .8em;color:var(--ink-soft)}
 .rail-box p:last-child{margin-bottom:0}
@@ -243,13 +419,17 @@ ul.desk-list a:hover{text-decoration:underline}
   .rail{display:block}
   .main-col{grid-column:1;grid-row:1;order:0}
   .rail{grid-column:2;grid-row:1;order:0}
-  .rail-box.election-box,.rail-box.about-box,.rail-box.more-box{order:0}
+  .rail-box.about-box,.rail-box.more-box{order:0}
   .lead h2.lead-head{font-size:2.5rem}
   .masthead h1{font-size:3.2rem}
 }
 footer{border-top:3px double var(--rule);margin-top:40px;padding:18px 0 34px;
   text-align:center;font-size:.8rem;color:var(--ink-soft)}
 footer a{color:var(--ink)}
+.newsletter-box{border-top:1px dotted var(--rule);margin-top:16px;padding-top:14px}
+.newsletter-box p{margin:6px 0}
+.newsletter-box input[type=email]{font-size:.9rem;padding:6px 8px;border:1px solid var(--rule);width:230px;max-width:70%}
+.newsletter-box input[type=submit]{font-size:.9rem;padding:6px 12px;border:1px solid var(--ink);background:var(--ink);color:#fff;cursor:pointer}
 @media(min-width:640px){.masthead h1{font-size:2.8rem}.card h2{font-size:1.6rem}}
 """
 
@@ -286,17 +466,60 @@ The Kendall Wire &bull; AI-assisted local reporting, reviewed by a human before 
 
 def fmt_date(datestr):
     try:
-        y, m, d = datestr.split("-")
-        import calendar
-        return "%s %d, %s" % (calendar.month_name[int(m)], int(d), y)
+        year, month, day = datestr.split("-")
+        return "%s %d, %s" % (calendar.month_name[int(month)], int(day), year)
     except Exception:
         return datestr
 
 
 def edition_date_str():
-    """Today's date line for the masthead, e.g. 'Monday, October 19, 2026'."""
-    import datetime
-    return datetime.date.today().strftime("%A, %B %d, %Y").replace(" 0", " ")
+    """Masthead date line, e.g. 'Monday, October 19, 2026'.
+
+    WIRE_EDITION_DATE=YYYY-MM-DD overrides the clock so a rebuild can be
+    checked without the date line drifting.
+    """
+    override = os.environ.get("WIRE_EDITION_DATE", "").strip()
+    if override:
+        year, month, day = (int(part) for part in override.split("-"))
+        day_value = datetime.date(year, month, day)
+    else:
+        day_value = datetime.date.today()
+    return day_value.strftime("%A, %B %d, %Y").replace(" 0", " ")
+
+
+def strip_private_lines(body):
+    """Drop production notes that must not ship: local paths and review flags."""
+    kept = []
+    skipping_image = False
+    for line in body.splitlines():
+        if re.match(r"^## Image\s*$", line.strip()):
+            skipping_image = True
+            continue
+        if skipping_image:
+            if line.startswith("#"):
+                skipping_image = False
+            else:
+                continue
+        if "/home/" in line or "/Users/" in line:
+            continue
+        if re.search(r"not approved for publication", line, re.I):
+            continue
+        kept.append(line)
+    return "\n".join(kept).strip()
+
+
+def strip_duplicate_title(body, title):
+    lines = body.splitlines()
+    index = 0
+    while index < len(lines) and not lines[index].strip():
+        index += 1
+    if index < len(lines):
+        line = lines[index].strip()
+        for prefix in ("# ", "## "):
+            if line.startswith(prefix) and line[len(prefix):].strip() == title.strip():
+                del lines[index]
+                break
+    return "\n".join(lines).strip()
 
 
 # ---------------------------------------------------------------------------
@@ -304,12 +527,15 @@ def edition_date_str():
 # ---------------------------------------------------------------------------
 
 def load_articles(articles_dir):
+    """Return (articles, problems). Problems are fatal and fail the build."""
     articles = []
+    problems = []
+    seen = {}
     for root, _dirs, files in os.walk(articles_dir):
-        for f in files:
-            if not f.endswith(".md"):
+        for name in files:
+            if not name.endswith(".md"):
                 continue
-            path = os.path.join(root, f)
+            path = os.path.join(root, name)
             with open(path, encoding="utf-8") as fh:
                 meta, body = parse_frontmatter(fh.read())
             if "title" not in meta or "date" not in meta:
@@ -318,42 +544,69 @@ def load_articles(articles_dir):
             if meta.get("status") != "published":
                 print("SKIP (not published): %s" % path, file=sys.stderr)
                 continue
+            meta.setdefault("slug", os.path.splitext(name)[0])
+            if not valid_article_id(meta.get("date"), meta.get("slug")):
+                problems.append(
+                    "%s: date must be YYYY-MM-DD and slug must be lowercase letters, digits, and hyphens"
+                    % path)
+                continue
             meta["_path"] = path
-            meta["_body"] = body
-            meta.setdefault("slug", os.path.splitext(f)[0])
+            meta["_body"] = strip_duplicate_title(strip_private_lines(body), meta["title"])
             if "desk" not in meta and "category" in meta:
-                meta["desk"] = meta["category"].title() + " Desk"
+                meta["desk"] = str(meta["category"]).title() + " Desk"
             meta.setdefault("desk", "Community Desk")
-            if "summary" not in meta and "summary-for-facebook" in meta:
+            if "summary" not in meta and meta.get("summary-for-facebook"):
                 meta["summary"] = str(meta["summary-for-facebook"]).strip().split("\n")[0]
-            if "summary" not in meta and "summary_for_facebook" in meta:
+            if "summary" not in meta and meta.get("summary_for_facebook"):
                 meta["summary"] = str(meta["summary_for_facebook"]).strip().split("\n")[0]
             meta.setdefault("summary", "")
             meta.setdefault("sources", [])
+            key = (meta["date"], meta["slug"])
+            if key in seen:
+                problems.append(
+                    "duplicate published article %s/%s (%s and %s)"
+                    % (key[0], key[1], seen[key], path))
+                continue
+            seen[key] = path
             articles.append(meta)
-    articles.sort(key=lambda a: (a["date"], a.get("slug", "")), reverse=True)
-    return articles
+    articles.sort(key=lambda article: (article["date"], article.get("slug", "")), reverse=True)
+    return articles, problems
 
 
 def copy_assets(articles, base_assets_dir, out_assets_dir, inline=False):
     if not inline:
         os.makedirs(out_assets_dir, exist_ok=True)
-    for a in articles:
-        img = a.get("image", "")
-        if not img:
+    for article in articles:
+        name = image_basename(article.get("image", ""))
+        raw_image = str(article.get("image", "") or "").strip()
+        if raw_image and not name:
+            print("WARN: ignoring image path that is not a plain image filename: %s" % raw_image,
+                  file=sys.stderr)
+            article["_image_url"] = ""
             continue
-        src = os.path.join(base_assets_dir, os.path.basename(img))
-        if not os.path.exists(src):
-            print("WARN: image not found: %s" % src, file=sys.stderr)
-            a["_image_url"] = ""
+        if not name:
+            article["_image_url"] = ""
+            continue
+        if raw_image.replace("\\", "/") not in (name, "assets/" + name, "./assets/" + name):
+            print("WARN: using assets/%s for image field %s (paths outside the assets directory are not read)"
+                  % (name, raw_image), file=sys.stderr)
+        src = os.path.join(base_assets_dir, name)
+        if os.path.islink(src) or not _is_within(base_assets_dir, src):
+            print("WARN: refusing to copy image outside the assets directory: %s" % name, file=sys.stderr)
+            article["_image_url"] = ""
+            continue
+        if not os.path.isfile(src):
+            print("WARN: image not found in assets dir: %s" % name, file=sys.stderr)
+            article["_image_url"] = ""
             continue
         if inline:
-            a["_image_data"] = image_data_uri(src)
-            a["_image_url"] = ""
+            article["_image_data"] = image_data_uri(src)
+            article["_image_url"] = ""
         else:
-            dst = os.path.join(out_assets_dir, os.path.basename(img))
-            shutil.copy2(src, dst)
-            a["_image_url"] = "assets/" + os.path.basename(img)
+            dst = os.path.join(out_assets_dir, name)
+            if not (os.path.exists(dst) and os.path.samefile(src, dst)):
+                shutil.copy2(src, dst)
+            article["_image_url"] = "assets/" + name
 
 
 def image_data_uri(path):
@@ -375,15 +628,6 @@ def image_data_uri(path):
 
 
 ARTICLE_URL = "articles/%s/%s/"
-
-ELECTION_BOX = """<div class="rail-box election-box">
-<h3>Election 2026</h3>
-<p>Early voting runs October 19 through October 30 at the Courthouse Annex,
-221 Fawn Valley Dr., Boerne. Election day is Tuesday, November 3.</p>
-<p>On the ballot: Justice of the Peace Precinct 1 (Van Stavern vs Wolfe),
-Comfort ISD Trustee District 2, Comal ISD bond measures, State Rep District 19,
-and US Rep District 21.</p>
-</div>"""
 
 ABOUT_BOX = """<div class="rail-box about-box">
 <h3>About the Wire</h3>
@@ -445,13 +689,11 @@ def _meta_line(a):
 
 
 def render_frontpage(articles):
-    """Newspaper front page, 2026-10-20 redesign from the Gemini audit:
-    one lead story with image, secondary stories in a single chronological
-    column with one-sentence summaries, and a rail with the election box,
-    the about box, and a More Headlines list of older stories that are not
-    in the main column. On mobile the rail boxes reorder around the main
-    column via flex order (election first, then stories, then about, then
-    more headlines)."""
+    """Newspaper front page: one lead story with image, secondary stories
+    in a single chronological column with one-sentence summaries, and a
+    rail with the about box and a More Headlines list. The November 3,
+    2026 election box used to sit in that rail; the published homepage
+    dropped it after election day, and the generator matches that."""
     if not articles:
         return "<p>No stories yet.</p>"
     lead = articles[0]
@@ -483,28 +725,61 @@ def render_frontpage(articles):
         more_box = ('<div class="rail-box more-box"><h3>More Headlines</h3>'
                     '<ul class="more-list">%s</ul></div>' % lis)
     return ('<hr class="fp-rule"><div class="fp"><main class="main-col">%s%s</main>'
-            '<aside class="rail">%s%s%s</aside></div>'
-            % (lead_html, "".join(sec_items), ELECTION_BOX, ABOUT_BOX, more_box))
+            '<aside class="rail">%s%s</aside></div>'
+            % (lead_html, "".join(sec_items), ABOUT_BOX, more_box))
+
+
+def _hero_html(article):
+    alt = html.escape(article["title"])
+    if article.get("_image_data"):
+        src = article["_image_data"]
+        if not _HERO_DATA_RE.match(src):
+            return ""
+        return '<div class="hero"><img src="%s" alt="%s"></div>' % (src, alt)
+    if article.get("_image_url"):
+        return '<div class="hero"><img src="../../%s" alt="%s"></div>' % (html.escape(article["_image_url"], quote=True), alt)
+    preserved = article.get("_preserved_hero") or ""
+    if preserved.startswith("data:image/"):
+        if not _HERO_DATA_RE.match(preserved):
+            return ""
+        return '<div class="hero"><img src="%s" alt="%s"></div>' % (preserved, alt)
+    if preserved.startswith("../../assets/"):
+        name = preserved[len("../../assets/"):]
+        if _IMAGE_NAME_RE.match(name):
+            return '<div class="hero"><img src="../../assets/%s" alt="%s"></div>' % (html.escape(name, quote=True), alt)
+    return ""
+
+
+def _source_items(sources):
+    items = []
+    for source in sources or []:
+        if isinstance(source, dict) and source.get("url"):
+            href = safe_url(source["url"])
+            label = source.get("name") or source["url"]
+            if href:
+                items.append('<li><a href="%s">%s</a></li>' % (html.escape(href, quote=True), html.escape(str(label))))
+            elif not (re.match(r"^[a-z][a-z0-9+.-]*:", str(label), re.I) and not safe_url(str(label))):
+                items.append("<li>%s</li>" % html.escape(str(label)))
+        elif isinstance(source, str):
+            href = safe_url(source)
+            if not href and re.match(r"^[a-z][a-z0-9+.-]*:", source, re.I):
+                continue
+            if href and href.lower().startswith(("http://", "https://", "mailto:")):
+                items.append('<li><a href="%s">%s</a></li>' % (html.escape(href, quote=True), html.escape(source)))
+            else:
+                items.append("<li>%s</li>" % html.escape(source))
+    return items
 
 
 def render_article(a):
-    img = ""
-    if a.get("_image_data"):
-        img = '<div class="hero"><img src="%s" alt="%s"></div>' % (a["_image_data"], html.escape(a["title"]))
-    elif a.get("_image_url"):
-        img = '<div class="hero"><img src="../../%s" alt="%s"></div>' % (a["_image_url"], html.escape(a["title"]))
+    img = _hero_html(a)
     fb = ""
-    if a.get("facebook"):
-        fb = '<p><a href="%s">Discuss this story on Facebook</a></p>' % html.escape(a["facebook"])
+    facebook = safe_url(a.get("facebook"))
+    if facebook:
+        fb = '<p><a href="%s">Discuss this story on Facebook</a></p>' % html.escape(facebook, quote=True)
     sources = ""
-    srcs = a.get("sources") or []
-    if srcs:
-        lis = []
-        for s in srcs:
-            if isinstance(s, dict) and s.get("url"):
-                lis.append('<li><a href="%s">%s</a></li>' % (html.escape(s["url"]), html.escape(s.get("name", s["url"]))))
-            elif isinstance(s, str):
-                lis.append("<li>%s</li>" % html.escape(s))
+    lis = _source_items(a.get("sources") or [])
+    if lis:
         sources = '<div class="sources"><h3>Sources</h3><ul>%s</ul></div>' % "".join(lis)
     return (
         '<article class="full">%s'
@@ -573,35 +848,173 @@ We verify everything against a real source before reporting it.</p>
 
 def render_rss(articles):
     items = []
-    for a in articles[:20]:
-        url = "%s/articles/%s/%s/" % (SITE_URL, a["date"], a["slug"])
+    for article in articles[:20]:
+        url = "%s/articles/%s/%s/" % (SITE_URL, article["date"], article["slug"])
+        escaped_url = html.escape(url, quote=True)
         items.append(
             "<item><title>%s</title><link>%s</link><guid>%s</guid>"
             "<pubDate>%s</pubDate><description>%s</description></item>"
-            % (html.escape(a["title"]), url, url, html.escape(a["date"]),
-               html.escape(a["summary"])))
+            % (html.escape(article["title"]), escaped_url, escaped_url,
+               html.escape(rfc822_date(article["date"])),
+               html.escape(article["summary"])))
     return ('<?xml version="1.0" encoding="utf-8"?>\n<rss version="2.0">'
             "<channel><title>The Kendall Wire</title>"
             "<link>%s</link><description>%s</description>%s</channel></rss>"
-            % (SITE_URL, SITE_TAGLINE, "".join(items)))
+            % (SITE_URL, html.escape(SITE_TAGLINE), "".join(items)))
 
 
-def render_sitemap(articles):
+def render_sitemap(articles, extra_urls=()):
     urls = [SITE_URL + "/", SITE_URL + "/about.html"]
-    for a in articles:
-        urls.append("%s/articles/%s/%s/" % (SITE_URL, a["date"], a["slug"]))
-    return ('<?xml version="1.0" encoding="utf-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
-            + "".join("<url><loc>%s</loc></url>" % u for u in urls) + "</urlset>")
+    urls.extend(extra_urls)
+    for article in articles:
+        urls.append("%s/articles/%s/%s/" % (SITE_URL, article["date"], article["slug"]))
+    body = "".join("<url><loc>%s</loc></url>" % html.escape(url, quote=True) for url in urls)
+    return ('<?xml version="1.0" encoding="utf-8"?>\n'
+            '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
+            + body + "</urlset>")
 
 
-def build(articles_dir, out_dir, base_assets_dir, inline_images=False):
-    articles = load_articles(articles_dir)
-    print("Loaded %d articles" % len(articles))
+def _static_urls(out_dir):
+    extras = []
+    if os.path.isfile(os.path.join(out_dir, "check-inbox.html")):
+        extras.append(SITE_URL + "/check-inbox.html")
+    if os.path.isfile(os.path.join(out_dir, "subscribed.html")):
+        extras.append(SITE_URL + "/subscribed.html")
+    if os.path.isfile(os.path.join(out_dir, "podcast", "index.html")):
+        extras.append(SITE_URL + "/podcast/")
+    return extras
 
-    if os.path.exists(out_dir):
-        shutil.rmtree(out_dir)
-    os.makedirs(out_dir)
-    copy_assets(articles, base_assets_dir, os.path.join(out_dir, "assets"), inline=inline_images)
+
+def _read_text(path):
+    with open(path, encoding="utf-8") as fh:
+        return fh.read()
+
+
+def existing_hero_src(article_index_path):
+    if not os.path.isfile(article_index_path):
+        return ""
+    text = _read_text(article_index_path)
+    matched = re.search(r'<div class="hero"><img src="([^"]+)"', text)
+    if not matched:
+        return ""
+    src = matched.group(1)
+    if src.startswith("data:image/"):
+        return src if _HERO_DATA_RE.match(src) else ""
+    if "/assets/" in src and "data:" not in src:
+        name = src.split("/assets/")[-1]
+        if _IMAGE_NAME_RE.match(name):
+            return "../../assets/" + name
+    return ""
+
+
+def article_meta_from_html(path, date, slug):
+    """Metadata for a published page whose markdown is not in this repo."""
+    text = _read_text(path)
+    title_match = re.search(r'<h2 class="title">(.*?)</h2>', text, re.S)
+    if not title_match:
+        title_match = re.search(r"<title>(.*?) - The Kendall Wire</title>", text, re.S)
+    if not title_match:
+        return None
+    summary_match = re.search(r'<meta name="description" content="(.*?)">', text, re.S)
+    desk_match = re.search(r'<div class="desk">(.*?)</div>', text, re.S)
+    image_url = ""
+    hero_match = re.search(r'<div class="hero"><img src="([^"]+)"', text)
+    if hero_match and "data:" not in hero_match.group(1) and "/assets/" in hero_match.group(1):
+        name = hero_match.group(1).split("/assets/")[-1]
+        if _IMAGE_NAME_RE.match(name):
+            image_url = "assets/" + name
+    return {
+        "title": html.unescape(title_match.group(1)).strip(),
+        "date": date,
+        "slug": slug,
+        "desk": html.unescape(desk_match.group(1)).strip() if desk_match else "Community Desk",
+        "summary": html.unescape(summary_match.group(1)).strip() if summary_match else "",
+        "sources": [],
+        "_image_url": image_url,
+        "_body": "",
+        "_preserved": True,
+    }
+
+
+def load_preserved_articles(out_dir, have_keys):
+    preserved = []
+    root = os.path.join(out_dir, "articles")
+    if not os.path.isdir(root):
+        return preserved
+    for date in sorted(os.listdir(root)):
+        date_dir = os.path.join(root, date)
+        if not os.path.isdir(date_dir) or not valid_date(date):
+            continue
+        for slug in sorted(os.listdir(date_dir)):
+            if (date, slug) in have_keys or not _SLUG_RE.match(slug):
+                continue
+            index_path = os.path.join(date_dir, slug, "index.html")
+            if not os.path.isfile(index_path) or not _is_within(root, index_path):
+                continue
+            meta = article_meta_from_html(index_path, date, slug)
+            if meta:
+                preserved.append(meta)
+    return preserved
+
+
+def prune_articles(out_dir, keep_keys):
+    root = os.path.join(out_dir, "articles")
+    if not os.path.isdir(root):
+        return 0
+    removed = 0
+    for date in list(os.listdir(root)):
+        date_dir = os.path.join(root, date)
+        if not os.path.isdir(date_dir) or not _is_within(root, date_dir):
+            continue
+        for slug in list(os.listdir(date_dir)):
+            slug_dir = os.path.join(date_dir, slug)
+            if (date, slug) in keep_keys or not os.path.isdir(slug_dir):
+                continue
+            if not _is_within(root, slug_dir):
+                continue
+            shutil.rmtree(slug_dir)
+            removed += 1
+        if os.path.isdir(date_dir) and not os.listdir(date_dir):
+            os.rmdir(date_dir)
+    return removed
+
+
+def build(articles_dir, out_dir, base_assets_dir, inline_images=False, prune=False):
+    articles, problems = load_articles(articles_dir)
+    if problems:
+        raise BuildError("\n".join(problems))
+    print("Loaded %d articles from %s" % (len(articles), articles_dir))
+    assert_safe_out(out_dir, articles_dir)
+    os.makedirs(out_dir, exist_ok=True)
+    if not os.path.isdir(base_assets_dir):
+        print("WARN: assets directory does not exist: %s" % base_assets_dir, file=sys.stderr)
+    out_assets = os.path.join(out_dir, "assets")
+    copy_assets(articles, base_assets_dir, out_assets, inline=inline_images)
+
+    for article in articles:
+        if article.get("_image_url") or article.get("_image_data"):
+            continue
+        previous = os.path.join(
+            out_dir, "articles", article["date"], article["slug"], "index.html")
+        hero = existing_hero_src(previous)
+        if hero:
+            article["_preserved_hero"] = hero
+            print("Keeping existing hero for %s/%s" % (article["date"], article["slug"]),
+                  file=sys.stderr)
+
+    have = set((article["date"], article["slug"]) for article in articles)
+    if prune:
+        removed = prune_articles(out_dir, have)
+        print("Pruned %d article director%s" % (removed, "y" if removed == 1 else "ies"),
+              file=sys.stderr)
+        preserved = []
+    else:
+        preserved = load_preserved_articles(out_dir, have)
+        if preserved:
+            print("Keeping %d published article(s) that have no markdown source."
+                  % len(preserved), file=sys.stderr)
+    combined = articles + preserved
+    combined.sort(key=lambda article: (article["date"], article.get("slug", "")), reverse=True)
 
     with open(os.path.join(out_dir, "style.css"), "w", encoding="utf-8") as fh:
         fh.write(CSS)
@@ -614,52 +1027,61 @@ def build(articles_dir, out_dir, base_assets_dir, inline_images=False):
             tagline=SITE_TAGLINE, content=content, analytics=analytics_snippet(),
             edition_date=edition_date_str(), wrap_class=wrap_class)
 
-    # Index (newspaper front page)
     with open(os.path.join(out_dir, "index.html"), "w", encoding="utf-8") as fh:
-        fh.write(page(SITE_NAME, SITE_TAGLINE, render_frontpage(articles),
+        fh.write(page(SITE_NAME, SITE_TAGLINE, render_frontpage(combined),
                       wrap_class="wrap wide"))
 
-    # About
     with open(os.path.join(out_dir, "about.html"), "w", encoding="utf-8") as fh:
         fh.write(page("About - " + SITE_NAME, "How The Kendall Wire works.", ABOUT_HTML))
 
-    # Articles
-    for a in articles:
-        d = os.path.join(out_dir, "articles", a["date"], a["slug"])
-        os.makedirs(d, exist_ok=True)
-        with open(os.path.join(d, "index.html"), "w", encoding="utf-8") as fh:
+    for article in articles:
+        dest = article_output_dir(out_dir, article["date"], article["slug"])
+        os.makedirs(dest, exist_ok=True)
+        with open(os.path.join(dest, "index.html"), "w", encoding="utf-8") as fh:
             art = BASE_HTML.format(
-                title=html.escape(a["title"] + " - " + SITE_NAME),
-                description=html.escape(a["summary"]),
+                title=html.escape(article["title"] + " - " + SITE_NAME),
+                description=html.escape(article["summary"]),
                 css_path="../../../style.css", home="../../../index.html",
                 about="../../../about.html", feed="../../../feed.xml",
-                tagline=SITE_TAGLINE, content=render_article(a),
+                tagline=SITE_TAGLINE, content=render_article(article),
                 analytics=analytics_snippet(),
                 edition_date=edition_date_str(), wrap_class="wrap")
             fh.write(art)
 
-    # Feed, sitemap, nojekyll
     with open(os.path.join(out_dir, "feed.xml"), "w", encoding="utf-8") as fh:
-        fh.write(render_rss(articles))
+        fh.write(render_rss(combined))
     with open(os.path.join(out_dir, "sitemap.xml"), "w", encoding="utf-8") as fh:
-        fh.write(render_sitemap(articles))
-    open(os.path.join(out_dir, ".nojekyll"), "w").close()
+        fh.write(render_sitemap(combined, _static_urls(out_dir)))
+    with open(os.path.join(out_dir, ".nojekyll"), "w", encoding="utf-8") as fh:
+        fh.write("")
     with open(os.path.join(out_dir, "CNAME"), "w", encoding="utf-8") as fh:
-        fh.write("kendallwire.com")
+        fh.write("kendallwire.com\n")
 
-    print("Wrote site to %s" % out_dir)
+    print("Wrote site to %s (%d stories on the homepage)" % (out_dir, len(combined)))
     return articles
 
 
-def main():
+def main(argv=None):
+    repo = os.path.dirname(os.path.abspath(__file__))
     ap = argparse.ArgumentParser()
-    ap.add_argument("--articles", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "articles"))
-    ap.add_argument("--out", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "docs"))
-    ap.add_argument("--assets", default=os.path.join(os.path.expanduser("~"), "workspace", "hill-country-weird", "assets"))
-    args = ap.parse_args()
+    ap.add_argument("--articles", default=os.path.join(repo, "articles"))
+    ap.add_argument("--out", default=os.path.join(repo, "docs"))
+    ap.add_argument("--assets", default=None,
+                    help="Directory of story images. Defaults to ./assets, then the legacy "
+                         "hill-country-weird assets folder, then ./docs/assets.")
+    ap.add_argument("--prune", action="store_true",
+                    help="Delete article output folders that are not in the published markdown set. "
+                         "Off by default so a partial articles/ directory cannot wipe the live site.")
+    args = ap.parse_args(argv)
+    assets = args.assets or default_assets_dir(repo)
     inline = os.environ.get("WIRE_INLINE_IMAGES", "") == "1"
-    build(args.articles, args.out, args.assets, inline_images=inline)
+    try:
+        build(args.articles, args.out, assets, inline_images=inline, prune=args.prune)
+    except BuildError as exc:
+        print("ERROR: %s" % exc, file=sys.stderr)
+        return 1
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
