@@ -23,7 +23,7 @@ sources:
   - name: "Edward Jones, Blake McAnelly, financial advisor in Boerne"
     url: "https://www.edwardjones.com/us-en/financial-advisor/blake-mcanelly"
 summary-for-facebook: "Bravo's Small Town Trouble: Texas, a reality series set in Boerne, premieres November 18. Bravo bills the cast as Boerne's social circle, but the network's own cast bios identify only one of the five women, Alli McAnelly, as a local. The bios and the public record state no current hometown for three of the others. Full story: https://kendallwire.com/articles/2026-10-23/bravo-small-town-trouble/"
-image: "/home/hatch/workspace/hill-country-weird/assets/wire-2026-10-23-bravo-boerne.jpg"
+image: assets/wire-2026-10-23-bravo-boerne.jpg
 ---
 
 # Bravo reality series set in Boerne names one of five women as a local

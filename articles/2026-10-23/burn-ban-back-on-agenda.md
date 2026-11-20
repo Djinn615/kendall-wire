@@ -13,7 +13,7 @@ sources:
   - name: "Boerne Star, Kendall County burn ban lifted"
     url: "https://www.boernestar.com/article/14288,kendall-county-burn-ban-lifted"
 summary-for-facebook: "Kendall County may be getting its burn ban back. Commissioners vote Tuesday on a 90-day outdoor burning ban for the unincorporated county; the ban has been off since October 2. The same agenda carries a wildfire-resilience block: the Hill Country Fire Coalition and insurance researchers will brief the court on fire-hardened home programs that could open up homeowners insurance options, plus a possible wildland-urban interface building code. Full story: https://kendallwire.com/articles/2026-10-23/burn-ban-back-on-agenda/"
-image: "/home/hatch/workspace/hill-country-weird/assets/wire-2026-10-23-burn-ban-vote.jpg"
+image: assets/wire-2026-10-23-burn-ban-vote.jpg
 ---
 
 # Court to weigh 90-day burn ban Tuesday
@@ -33,8 +33,3 @@ The meeting is at 9 a.m. in the Commissioners Courtroom on the third floor of th
 - October 27, 2026 Commissioners Court Agenda and Backup (official): https://www.kendallcountytx.gov/AgendaCenter
 - Kendall County Commissioners Court page, "BURN BAN OFF - EFFECTIVE 10/2/2026": https://kendallcountytx.gov/298/Commissioners-Court
 - Boerne Star, "Kendall County burn ban lifted," published October 7, 2026: https://www.boernestar.com/article/14288,kendall-county-burn-ban-lifted
-
-## Image
-
-/home/hatch/workspace/hill-country-weird/assets/wire-2026-10-23-burn-ban-vote.jpg
-(sealed newspaper card, visually verified 2026-10-23: kicker, headline "COURT TO WEIGH BURN BAN" spelled correctly, subhead, footer date Friday, October 23, 2026, seal small gray bottom-right clear of illustration, no garbled text, no invented landmarks)
