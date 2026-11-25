@@ -13,7 +13,7 @@ sources:
   - name: "100 Club of Kendall County, In Memoriam"
     url: "https://www.100clubkendallcounty.org/in-memoriam"
 summary-for-facebook: "A stretch of US 87 could soon carry the name of Officer Russell \"Rusty\" Salazar. Commissioners vote Tuesday on a highway sign agreement designating the Officer Russell Rusty Salazar Memorial Highway along US 87 from the Kerr County line to IH-10. Salazar, a Kendall County community supervision officer, died in the line of duty on January 31, 2019, in a crash at the I-10 and US 87 interchange. Full story: https://kendallwire.com/articles/2026-10-23/salazar-memorial-highway/"
-image: "/home/hatch/workspace/hill-country-weird/assets/wire-2026-10-23-salazar-memorial-highway.jpg"
+image: assets/wire-2026-10-23-salazar-memorial-highway.jpg
 ---
 
 # Court to vote on Salazar memorial highway marker
@@ -31,8 +31,3 @@ Earlier this year, the court approved resolutions requesting memorial markers fo
 - October 27, 2026 Commissioners Court Agenda and Backup (official): https://www.kendallcountytx.gov/AgendaCenter
 - Boerne Star, "It's up to TxDOT: County wants I-10 memorials for 2 fallen officers": https://www.boernestar.com/article/12403,it-s-up-to-txdot-county-wants-i-10-memorials-for-2-fallen-officers
 - 100 Club of Kendall County, In Memoriam: https://www.100clubkendallcounty.org/in-memoriam
-
-## Image
-
-/home/hatch/workspace/hill-country-weird/assets/wire-2026-10-23-salazar-memorial-highway.jpg
-(sealed newspaper card, visually verified 2026-10-23: kicker, headline "SALAZAR MEMORIAL HIGHWAY" spelled correctly, subhead, footer date Friday, October 23, 2026, seal small gray bottom-right clear of illustration, no garbled text, no invented landmarks)
